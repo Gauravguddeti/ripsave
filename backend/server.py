@@ -16,7 +16,7 @@ import yt_dlp
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from motor.motor_asyncio import AsyncIOMotorClient
+import asyncpg
 from dotenv import load_dotenv
 
 from models import (
@@ -33,8 +33,7 @@ from models import (
 
 load_dotenv()
 
-MONGO_URL: str = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME: str = os.getenv("DB_NAME", "ripsave")
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
 COOKIE_FILE: Optional[str] = os.getenv("COOKIE_FILE", None)
 
@@ -46,25 +45,40 @@ QUALITY_HEIGHT = {"360p": 360, "720p": 720, "1080p": 1080}
 # Lifespan (startup/shutdown)
 # ---------------------------------------------------------------------------
 
-mongo_client: Optional[AsyncIOMotorClient] = None
-db = None
+db_pool: Optional[asyncpg.Pool] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global mongo_client, db
-    try:
-        mongo_client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=3000)
-        await mongo_client.server_info()
-        db = mongo_client[DB_NAME]
-        await db["history"].create_index("downloaded_at")
-        print(f"[RipSave] MongoDB connected: {MONGO_URL}/{DB_NAME}")
-    except Exception as exc:
-        print(f"[RipSave] MongoDB not available: {exc}  — history persistence disabled")
-        db = None
+    global db_pool
+    if DATABASE_URL:
+        try:
+            db_pool = await asyncpg.create_pool(DATABASE_URL)
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS history (
+                        id SERIAL PRIMARY KEY,
+                        url TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        thumbnail TEXT,
+                        format VARCHAR(10) NOT NULL,
+                        quality VARCHAR(20) NOT NULL,
+                        downloaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            print("[RipSave] PostgreSQL connected successfully.")
+        except Exception as exc:
+            print(f"[RipSave] PostgreSQL connection failed: {exc} — history persistence disabled")
+            db_pool = None
+    else:
+        print("[RipSave] No DATABASE_URL provided — history persistence disabled")
+    
     yield
-    if mongo_client:
-        mongo_client.close()
+    
+    if db_pool:
+        await db_pool.close()
 
 
 # ---------------------------------------------------------------------------
@@ -291,13 +305,16 @@ async def download_media(
 @app.post("/api/history", tags=["history"])
 async def save_history(item: HistoryRequest):
     """Save a download history record."""
-    record = {
-        **item.model_dump(),
-        "downloaded_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if db is not None:
+    if db_pool is not None:
         try:
-            await db["history"].insert_one(record)
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO history (url, title, thumbnail, format, quality)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    item.url, item.title, item.thumbnail, item.format, item.quality
+                )
         except Exception as exc:
             print(f"[RipSave] History save failed: {exc}")
     return {"status": "saved"}
@@ -305,18 +322,22 @@ async def save_history(item: HistoryRequest):
 
 @app.get("/api/history", tags=["history"])
 async def get_history():
-    """Return last 50 download history records (no MongoDB _id)."""
-    if db is None:
+    """Return last 50 download history records."""
+    if db_pool is None:
         return []
     try:
-        cursor = (
-            db["history"]
-            .find({}, {"_id": 0})
-            .sort("downloaded_at", -1)
-            .limit(50)
-        )
-        records = await cursor.to_list(length=50)
-        return records
+        async with db_pool.acquire() as conn:
+            records = await conn.fetch(
+                "SELECT url, title, thumbnail, format, quality, downloaded_at FROM history ORDER BY downloaded_at DESC LIMIT 50"
+            )
+            # Convert Record objects to dicts and serialize datetime
+            return [
+                {
+                    **dict(r),
+                    "downloaded_at": r["downloaded_at"].isoformat() if r["downloaded_at"] else None
+                }
+                for r in records
+            ]
     except Exception as exc:
         print(f"[RipSave] History fetch failed: {exc}")
         return []
@@ -325,9 +346,10 @@ async def get_history():
 @app.delete("/api/history", tags=["history"])
 async def clear_history():
     """Delete all download history records."""
-    if db is not None:
+    if db_pool is not None:
         try:
-            await db["history"].delete_many({})
+            async with db_pool.acquire() as conn:
+                await conn.execute("DELETE FROM history")
         except Exception as exc:
             print(f"[RipSave] History clear failed: {exc}")
     return {"status": "cleared"}

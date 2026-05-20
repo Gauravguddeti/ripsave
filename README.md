@@ -8,9 +8,9 @@ A social media video/audio downloader supporting YouTube, TikTok, Instagram, Twi
 
 | Layer | Technology |
 |---|---|
-| Backend | FastAPI + yt-dlp + ffmpeg + Motor (async MongoDB) |
+| Backend | FastAPI + yt-dlp + ffmpeg + asyncpg (PostgreSQL) |
 | Frontend | React + Tailwind CSS + lucide-react + react-icons + sonner |
-| Database | MongoDB |
+| Database | NeonDB (PostgreSQL) |
 | Design | Neo-Brutalist — hard shadows, electric blue, mustard yellow |
 
 ---
@@ -21,7 +21,7 @@ A social media video/audio downloader supporting YouTube, TikTok, Instagram, Twi
 
 - Python 3.9+
 - Node.js 18+
-- MongoDB running locally (`mongodb://localhost:27017`)
+- PostgreSQL database (NeonDB) connection string
 - ffmpeg installed:
   - **Linux**: `sudo apt-get install -y ffmpeg`
   - **macOS**: `brew install ffmpeg`
