@@ -46,11 +46,23 @@ QUALITY_HEIGHT = {"360p": 360, "720p": 720, "1080p": 1080}
 # ---------------------------------------------------------------------------
 
 db_pool: Optional[asyncpg.Pool] = None
+RUNTIME_COOKIE_FILE: Optional[str] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db_pool
+    global db_pool, RUNTIME_COOKIE_FILE
+    
+    # Handle read-only /etc/secrets on Render for yt-dlp cookies
+    if COOKIE_FILE and os.path.exists(COOKIE_FILE):
+        try:
+            temp_cookie = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            temp_cookie.close()
+            shutil.copy2(COOKIE_FILE, temp_cookie.name)
+            RUNTIME_COOKIE_FILE = temp_cookie.name
+            print(f"[RipSave] Copied cookies to writable location: {RUNTIME_COOKIE_FILE}")
+        except Exception as exc:
+            print(f"[RipSave] Failed to copy cookies: {exc}")
     if DATABASE_URL:
         try:
             db_pool = await asyncpg.create_pool(DATABASE_URL)
@@ -123,8 +135,8 @@ def _extract_info_sync(url: str) -> dict:
         "skip_download": True,
         "noplaylist": True,
     }
-    if COOKIE_FILE and os.path.exists(COOKIE_FILE):
-        ydl_opts["cookiefile"] = COOKIE_FILE
+    if RUNTIME_COOKIE_FILE and os.path.exists(RUNTIME_COOKIE_FILE):
+        ydl_opts["cookiefile"] = RUNTIME_COOKIE_FILE
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -185,8 +197,8 @@ def _download_file_sync(url: str, fmt: str, quality: str, tmpdir: str) -> Path:
             ],
         }
 
-    if COOKIE_FILE and os.path.exists(COOKIE_FILE):
-        ydl_opts["cookiefile"] = COOKIE_FILE
+    if RUNTIME_COOKIE_FILE and os.path.exists(RUNTIME_COOKIE_FILE):
+        ydl_opts["cookiefile"] = RUNTIME_COOKIE_FILE
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
