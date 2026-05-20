@@ -1,0 +1,35 @@
+{
+  "name": "RipSave",
+  "short_name": "RipSave",
+  "description": "Download videos and audio from YouTube, TikTok, Instagram, Twitter/X and 1000+ sites. No fluff. Just files.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F4F0",
+  "theme_color": "#0044FF",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "categories": ["utilities", "entertainment"],
+  "screenshots": []
+}

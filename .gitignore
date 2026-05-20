@@ -1,0 +1,23 @@
+# Node / React
+node_modules/
+build/
+.env
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+
+# Sensitive / Secrets
+cookies.txt
+*.pem
+
+# IDEs / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
